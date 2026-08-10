@@ -23,6 +23,7 @@ function Ensure-WingetPackage([string]$Command, [string]$PackageId) {
 
 function Invoke-Soft([string]$Label, [scriptblock]$Action) {
   try {
+    $global:LASTEXITCODE = 0
     & $Action
     if ($LASTEXITCODE -ne 0) {
       Write-Warning "$Label returned exit code $LASTEXITCODE"
@@ -42,6 +43,21 @@ function Reset-ClaudeMcp([string]$Name, [string[]]$AddArgs) {
   if (-not (Has-Command "claude")) { return }
   Invoke-Soft "claude mcp remove $Name" { claude mcp remove $Name *> $null }
   Invoke-Soft "claude mcp add $Name" { claude mcp add @AddArgs }
+}
+
+function Install-GlobalSkillRepo([string]$Repo, [string[]]$Skills = @()) {
+  if ($Skills.Count -eq 0) {
+    Invoke-Soft "skills add $Repo" {
+      & npx -y skills add $Repo -g --copy -a codex -a claude-code -a cursor -a cline -y
+    }
+    return
+  }
+
+  foreach ($skill in $Skills) {
+    Invoke-Soft "skills add $Repo/$skill" {
+      & npx -y skills add $Repo --skill $skill -g --copy -a codex -a claude-code -a cursor -a cline -y
+    }
+  }
 }
 
 Write-Host "AiMa OMNI AI STACK bootstrap" -ForegroundColor Green
@@ -141,7 +157,21 @@ try {
   Pop-Location
 }
 
-Write-Step "Installing global autonomous research skills"
+Write-Step "Installing curated global agent skill packs"
+Install-GlobalSkillRepo "https://github.com/Leonxlnx/taste-skill" @(
+  "design-taste-frontend",
+  "gpt-taste",
+  "image-to-code",
+  "redesign-existing-projects",
+  "full-output-enforcement"
+)
+Install-GlobalSkillRepo "https://github.com/coreyhaines31/marketingskills"
+Install-GlobalSkillRepo "https://github.com/hardikpandya/stop-slop"
+Install-GlobalSkillRepo "https://github.com/remotion-dev/skills" @("remotion-best-practices")
+Install-GlobalSkillRepo "https://github.com/muratcankoylan/Agent-Skills-for-Context-Engineering"
+Install-GlobalSkillRepo "https://github.com/nextlevelbuilder/ui-ux-pro-max-skill" @("ui-ux-pro-max")
+
+Write-Step "Installing AiMa autonomous research/evidence skills"
 $skillRoots = @(
   (Join-Path $HOME ".codex\skills"),
   (Join-Path $HOME ".claude\skills")
@@ -171,9 +201,11 @@ foreach ($root in $skillRoots) {
 Write-Step "Configuring Codex MCP servers"
 if (Has-Command "codex") {
   Reset-CodexMcp "playwright" @("npx", "@playwright/mcp@latest")
-  Reset-CodexMcp "sequential-thinking" @("npx", "-y", "@modelcontextprotocol/server-sequential-thinking")
+  Invoke-Soft "codex mcp remove sequential-thinking" { codex mcp remove sequential-thinking *> $null }
+  Invoke-Soft "codex mcp add sequential-thinking" {
+    codex mcp add sequential-thinking --env "DISABLE_THOUGHT_LOGGING=true" -- npx -y @modelcontextprotocol/server-sequential-thinking
+  }
   Reset-CodexMcp "context7" @("npx", "-y", "@upstash/context7-mcp@latest")
-  Reset-CodexMcp "openaiDeveloperDocs" @("--url", "https://developers.openai.com/mcp")
 
   if ($env:FIRECRAWL_API_KEY) {
     Invoke-Soft "codex mcp remove firecrawl" { codex mcp remove firecrawl *> $null }
@@ -186,7 +218,10 @@ if (Has-Command "codex") {
 Write-Step "Configuring Claude Code MCP servers"
 if (Has-Command "claude") {
   Reset-ClaudeMcp "playwright" @("playwright", "npx", "@playwright/mcp@latest")
-  Reset-ClaudeMcp "sequential-thinking" @("sequential-thinking", "--", "npx", "-y", "@modelcontextprotocol/server-sequential-thinking")
+  Invoke-Soft "claude mcp remove sequential-thinking" { claude mcp remove sequential-thinking *> $null }
+  Invoke-Soft "claude mcp add sequential-thinking" {
+    claude mcp add sequential-thinking --env "DISABLE_THOUGHT_LOGGING=true" -- npx -y @modelcontextprotocol/server-sequential-thinking
+  }
   Reset-ClaudeMcp "context7" @("context7", "--", "npx", "-y", "@upstash/context7-mcp@latest")
 
   Invoke-Soft "claude mcp remove tavily" { claude mcp remove tavily-remote-mcp *> $null }
@@ -214,8 +249,9 @@ Write-Step "Installation complete"
 Write-Host "Repository: $RepoDir" -ForegroundColor Green
 Write-Host "Autonomous browser: Browser Use CLI + Playwright MCP" -ForegroundColor Green
 Write-Host "Research: Tavily (Claude OAuth), Firecrawl when FIRECRAWL_API_KEY exists, Context7 docs" -ForegroundColor Green
-Write-Host "Reasoning: Sequential Thinking" -ForegroundColor Green
+Write-Host "Reasoning: Sequential Thinking (console thought logging disabled)" -ForegroundColor Green
 Write-Host "Verification: autonomous-web + evidence-challenger skills" -ForegroundColor Green
+Write-Host "Curated skills: Taste, Marketing, Stop Slop, Remotion, Context Engineering, UI/UX Pro Max" -ForegroundColor Green
 Write-Host "Browser gateway: GPT / Qwen / OpenRouter Auto / Claude / NVIDIA NIM / Bytez" -ForegroundColor Green
 Write-Host "Local agents: Codex / Claude Code / Hermes" -ForegroundColor Green
 Write-Host "Provider credentials belong only in $RepoDir\.env or environment variables." -ForegroundColor Yellow
