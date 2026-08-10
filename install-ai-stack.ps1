@@ -93,7 +93,7 @@ if (-not (Has-Command "git")) { throw "git is unavailable after installation. Re
 if (-not (Has-Command "gh")) { throw "GitHub CLI is unavailable after installation. Reopen PowerShell and rerun." }
 
 Write-Step "Installing/updating Codex CLI and Claude Code"
-npm install -g @openai/codex @anthropic-ai/claude-code
+npm install -g "@openai/codex" "@anthropic-ai/claude-code"
 
 Write-Step "Installing/updating Hermes Agent"
 try {
@@ -203,7 +203,7 @@ if (Has-Command "codex") {
   Reset-CodexMcp "playwright" @("npx", "@playwright/mcp@latest")
   Invoke-Soft "codex mcp remove sequential-thinking" { codex mcp remove sequential-thinking *> $null }
   Invoke-Soft "codex mcp add sequential-thinking" {
-    codex mcp add sequential-thinking --env "DISABLE_THOUGHT_LOGGING=true" -- npx -y @modelcontextprotocol/server-sequential-thinking
+    codex mcp add sequential-thinking --env "DISABLE_THOUGHT_LOGGING=true" -- npx -y "@modelcontextprotocol/server-sequential-thinking"
   }
   Reset-CodexMcp "context7" @("npx", "-y", "@upstash/context7-mcp@latest")
 
@@ -220,7 +220,7 @@ if (Has-Command "claude") {
   Reset-ClaudeMcp "playwright" @("playwright", "npx", "@playwright/mcp@latest")
   Invoke-Soft "claude mcp remove sequential-thinking" { claude mcp remove sequential-thinking *> $null }
   Invoke-Soft "claude mcp add sequential-thinking" {
-    claude mcp add sequential-thinking --env "DISABLE_THOUGHT_LOGGING=true" -- npx -y @modelcontextprotocol/server-sequential-thinking
+    claude mcp add sequential-thinking --env "DISABLE_THOUGHT_LOGGING=true" -- npx -y "@modelcontextprotocol/server-sequential-thinking"
   }
   Reset-ClaudeMcp "context7" @("context7", "--", "npx", "-y", "@upstash/context7-mcp@latest")
 
