@@ -106,7 +106,7 @@ Write-Host "Provider credentials for browser routes belong only in $RepoDir\.env
 if (-not $SkipLaunch) {
   Write-Step "Opening sign-in windows and starting AiMa"
   if (Has-Command "codex") {
-    Start-Process powershell.exe -ArgumentList @("-NoExit", "-NoProfile", "-Command", "Set-Location '$RepoDir'; codex --login")
+    Start-Process powershell.exe -ArgumentList @("-NoExit", "-NoProfile", "-Command", "Set-Location '$RepoDir'; codex login")
   }
   if (Has-Command "claude") {
     Start-Process powershell.exe -ArgumentList @("-NoExit", "-NoProfile", "-Command", "Set-Location '$RepoDir'; claude")
