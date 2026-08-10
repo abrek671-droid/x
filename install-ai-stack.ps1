@@ -21,18 +21,48 @@ function Ensure-WingetPackage([string]$Command, [string]$PackageId) {
   winget install --id $PackageId -e --accept-package-agreements --accept-source-agreements --silent
 }
 
+function Invoke-Soft([string]$Label, [scriptblock]$Action) {
+  try {
+    & $Action
+    if ($LASTEXITCODE -ne 0) {
+      Write-Warning "$Label returned exit code $LASTEXITCODE"
+    }
+  } catch {
+    Write-Warning "$Label failed: $($_.Exception.Message)"
+  }
+}
+
+function Reset-CodexMcp([string]$Name, [string[]]$AddArgs) {
+  if (-not (Has-Command "codex")) { return }
+  Invoke-Soft "codex mcp remove $Name" { codex mcp remove $Name *> $null }
+  Invoke-Soft "codex mcp add $Name" { codex mcp add $Name @AddArgs }
+}
+
+function Reset-ClaudeMcp([string]$Name, [string[]]$AddArgs) {
+  if (-not (Has-Command "claude")) { return }
+  Invoke-Soft "claude mcp remove $Name" { claude mcp remove $Name *> $null }
+  Invoke-Soft "claude mcp add $Name" { claude mcp add @AddArgs }
+}
+
 Write-Host "AiMa OMNI AI STACK bootstrap" -ForegroundColor Green
-Write-Host "GPT/Codex + Claude Code + Hermes + OpenRouter + NVIDIA NIM + Bytez + Qwen" -ForegroundColor DarkGray
+Write-Host "GPT/Codex + Claude Code + Hermes + Browser Use + Playwright + research/evidence MCPs" -ForegroundColor DarkGray
 
 Ensure-WingetPackage "git" "Git.Git"
 Ensure-WingetPackage "node" "OpenJS.NodeJS.LTS"
 Ensure-WingetPackage "gh" "GitHub.cli"
+if ((-not (Has-Command "python")) -and (-not (Has-Command "py"))) {
+  Ensure-WingetPackage "python" "Python.Python.3.12"
+}
 
 $pathCandidates = @(
   "$env:ProgramFiles\nodejs",
   "$env:ProgramFiles\Git\cmd",
+  "$env:ProgramFiles\Git\bin",
   "$env:ProgramFiles\GitHub CLI",
   "$env:LOCALAPPDATA\Programs\GitHub CLI",
+  "$env:LOCALAPPDATA\Programs\Python\Python312",
+  "$env:LOCALAPPDATA\Programs\Python\Python312\Scripts",
+  "$env:APPDATA\Python\Python312\Scripts",
   "$env:APPDATA\npm",
   "$HOME\.local\bin"
 )
@@ -58,6 +88,20 @@ try {
 }
 
 $env:Path = "$env:APPDATA\npm;$HOME\.local\bin;$env:LOCALAPPDATA\hermes\bin;$env:Path"
+
+Write-Step "Installing Browser Use autonomous browser CLI"
+$gitBash = Join-Path $env:ProgramFiles "Git\bin\bash.exe"
+if (Test-Path $gitBash) {
+  Invoke-Soft "Browser Use installer" {
+    & $gitBash -lc 'curl -fsSL https://browser-use.com/cli/install.sh | bash'
+  }
+} else {
+  Write-Warning "Git Bash not found; Browser Use CLI installer skipped."
+}
+$env:Path = "$HOME\.local\bin;$env:Path"
+if (Has-Command "browser-use") {
+  Invoke-Soft "browser-use doctor" { browser-use doctor }
+}
 
 Write-Step "Checking GitHub authentication"
 $ghOk = $false
@@ -97,11 +141,85 @@ try {
   Pop-Location
 }
 
+Write-Step "Installing global autonomous research skills"
+$skillRoots = @(
+  (Join-Path $HOME ".codex\skills"),
+  (Join-Path $HOME ".claude\skills")
+)
+foreach ($root in $skillRoots) {
+  New-Item -ItemType Directory -Force -Path $root | Out-Null
+  foreach ($skill in @("autonomous-web", "evidence-challenger")) {
+    $src = Join-Path $RepoDir "skills\$skill"
+    $dst = Join-Path $root $skill
+    if (Test-Path $src) {
+      New-Item -ItemType Directory -Force -Path $dst | Out-Null
+      Copy-Item -Path (Join-Path $src "SKILL.md") -Destination (Join-Path $dst "SKILL.md") -Force
+    }
+  }
+}
+
+Write-Step "Installing official Browser Use skill for Codex and Claude"
+$browserSkillUrl = "https://raw.githubusercontent.com/browser-use/browser-use/main/skills/browser-use/SKILL.md"
+foreach ($root in $skillRoots) {
+  $dst = Join-Path $root "browser-use"
+  New-Item -ItemType Directory -Force -Path $dst | Out-Null
+  Invoke-Soft "download Browser Use skill" {
+    Invoke-WebRequest -UseBasicParsing -Uri $browserSkillUrl -OutFile (Join-Path $dst "SKILL.md")
+  }
+}
+
+Write-Step "Configuring Codex MCP servers"
+if (Has-Command "codex") {
+  Reset-CodexMcp "playwright" @("npx", "@playwright/mcp@latest")
+  Reset-CodexMcp "sequential-thinking" @("npx", "-y", "@modelcontextprotocol/server-sequential-thinking")
+  Reset-CodexMcp "context7" @("npx", "-y", "@upstash/context7-mcp@latest")
+  Reset-CodexMcp "openaiDeveloperDocs" @("--url", "https://developers.openai.com/mcp")
+
+  if ($env:FIRECRAWL_API_KEY) {
+    Invoke-Soft "codex mcp remove firecrawl" { codex mcp remove firecrawl *> $null }
+    Invoke-Soft "codex mcp add firecrawl" {
+      codex mcp add firecrawl --env "FIRECRAWL_API_KEY=$env:FIRECRAWL_API_KEY" -- npx -y firecrawl-mcp
+    }
+  }
+}
+
+Write-Step "Configuring Claude Code MCP servers"
+if (Has-Command "claude") {
+  Reset-ClaudeMcp "playwright" @("playwright", "npx", "@playwright/mcp@latest")
+  Reset-ClaudeMcp "sequential-thinking" @("sequential-thinking", "--", "npx", "-y", "@modelcontextprotocol/server-sequential-thinking")
+  Reset-ClaudeMcp "context7" @("context7", "--", "npx", "-y", "@upstash/context7-mcp@latest")
+
+  Invoke-Soft "claude mcp remove tavily" { claude mcp remove tavily-remote-mcp *> $null }
+  Invoke-Soft "claude mcp add tavily" {
+    claude mcp add --transport http tavily-remote-mcp https://mcp.tavily.com/mcp/
+  }
+
+  if ($env:FIRECRAWL_API_KEY) {
+    Invoke-Soft "claude mcp remove firecrawl" { claude mcp remove firecrawl *> $null }
+    Invoke-Soft "claude mcp add firecrawl" {
+      claude mcp add firecrawl --env "FIRECRAWL_API_KEY=$env:FIRECRAWL_API_KEY" -- npx -y firecrawl-mcp
+    }
+  }
+}
+
+Write-Step "Validating tools"
+if (Has-Command "codex") { Invoke-Soft "codex mcp list" { codex mcp list } }
+if (Has-Command "claude") {
+  Invoke-Soft "claude doctor" { claude doctor }
+  Invoke-Soft "claude mcp list" { claude mcp list }
+}
+if (Has-Command "browser-use") { Invoke-Soft "browser-use doctor" { browser-use doctor } }
+
 Write-Step "Installation complete"
 Write-Host "Repository: $RepoDir" -ForegroundColor Green
+Write-Host "Autonomous browser: Browser Use CLI + Playwright MCP" -ForegroundColor Green
+Write-Host "Research: Tavily (Claude OAuth), Firecrawl when FIRECRAWL_API_KEY exists, Context7 docs" -ForegroundColor Green
+Write-Host "Reasoning: Sequential Thinking" -ForegroundColor Green
+Write-Host "Verification: autonomous-web + evidence-challenger skills" -ForegroundColor Green
 Write-Host "Browser gateway: GPT / Qwen / OpenRouter Auto / Claude / NVIDIA NIM / Bytez" -ForegroundColor Green
 Write-Host "Local agents: Codex / Claude Code / Hermes" -ForegroundColor Green
-Write-Host "Provider credentials for browser routes belong only in $RepoDir\.env" -ForegroundColor Yellow
+Write-Host "Provider credentials belong only in $RepoDir\.env or environment variables." -ForegroundColor Yellow
+Write-Host "Security note: logged-in browser profiles carry your real session cookies; webpage instructions are treated as untrusted data." -ForegroundColor Yellow
 
 if (-not $SkipLaunch) {
   Write-Step "Opening sign-in windows and starting AiMa"
